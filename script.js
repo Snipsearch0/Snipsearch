@@ -1,367 +1,254 @@
-const apiKey = 'AIzaSyDFliUSc0-bUmwbM1YR4wmQXk5wVgGV6-A';
-const cx = 'c7621a78e53794892';
-const gnewsApiKey = '13463084aadb9cde1f92844c1ba2acc2';
+// ===== Snipsearch - script.js (Part 1) =====
+const apiKey = "AIzaSyDFliUSc0-bUmwbM1YR4wmQXk5wVgGV6-A";
+const cx = "c7621a78e53794892";
+const gnewsApiKey = "13463084aadb9cde1f92844c1ba2acc2";
+const youtubeApiKey = "AIzaSyBbcXGt0avRivC7fK4rmLovP4FQcmLk3t0";
 
-// Sidebar Toggle Function
-function toggleSidebar() {
-  const sidebar = document.getElementById('sidebar');
-  const overlay = document.getElementById('sidebarOverlay');
-  
-  sidebar.classList.toggle('active');
-  overlay.classList.toggle('active');
-}
+let currentTab = "all";
+let currentPage = 1;
+const pageTokenMap = {}; // YouTube pagination tokens
 
-// Close sidebar when clicking on overlay
-document.addEventListener('DOMContentLoaded', function() {
-  const overlay = document.getElementById('sidebarOverlay');
-  if (overlay) {
-    overlay.addEventListener('click', toggleSidebar);
+// DOM Elements
+const searchInput = document.getElementById("searchInput");
+const searchButton = document.getElementById("search-button");
+const resultsDiv = document.getElementById("results");
+const paginationDiv = document.getElementById("pagination");
+const loadingIndicator = document.getElementById("loading");
+const errorMessageDiv = document.getElementById("error-message");
+const historyDropdown = document.getElementById("history-dropdown");
+const historyList = document.getElementById("history-list");
+const clearHistoryButton = document.getElementById("clear-history");
+const themeToggle = document.getElementById("theme-toggle");
+
+// --- Dark Mode Toggle ---
+function initTheme() {
+  const isDarkMode = localStorage.getItem('theme') === 'dark';
+  if (isDarkMode) {
+    document.documentElement.classList.add('dark-mode');
+    themeToggle.textContent = '🌙';
+  } else {
+    document.documentElement.classList.remove('dark-mode');
+    themeToggle.textContent = '☀️';
   }
-  
-  // Close sidebar on Escape key
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-      const sidebar = document.getElementById('sidebar');
-      if (sidebar.classList.contains('active')) {
-        toggleSidebar();
-      }
-    }
-  });
-  
-  // Load news on page load
-  fetchTopNews();
+}
+initTheme();
+
+themeToggle.addEventListener('click', () => {
+  const isDarkMode = document.documentElement.classList.toggle('dark-mode');
+  localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+  themeToggle.textContent = isDarkMode ? '🌙' : '☀️';
 });
 
-function search() {
-  const query = document.getElementById("searchInput").value.trim();
-  if (!query) return;
-
-  // Hide home panels and show search results section
-  document.getElementById("homePanels").style.display = "none";
-  document.getElementById("searchResultsSection").style.display = "block";
-
-  // Clear previous results
-  clearAllResults();
-
-  // Fetch data based on query
-  fetchWikipediaFullArticle(query);
-  fetchGoogleResults(query);
-  
-  // Only fetch numbers fact if query contains numbers
-  if (/\d+/.test(query)) {
-    fetchNumbersFact(query);
-  }
-  
-  // Fetch DuckDuckGo for specific queries
-  fetchDuckDuckGoResults(query);
-  
-  // Show random fact only for general queries
-  if (query.length > 3) {
-    fetchRandomFact();
-  }
+// --- Search History ---
+function getSearchHistory() {
+  const history = localStorage.getItem('searchHistory');
+  return history ? JSON.parse(history) : [];
 }
 
-function goHome() {
-  clearAllResults();
-  document.getElementById("searchResultsSection").style.display = "none";
-  document.getElementById("homePanels").style.display = "block";
-  document.getElementById("searchInput").value = "";
+function saveSearchHistory(query) {
+  const history = getSearchHistory();
+  const newHistory = [query, ...history.filter(q => q !== query).slice(0, 4)];
+  localStorage.setItem('searchHistory', JSON.stringify(newHistory));
 }
 
-function clearAllResults() {
-  document.getElementById("results").innerHTML = "";
-  document.getElementById("wiki-results").innerHTML = "";
-  document.getElementById("numbers-results").innerHTML = "";
-  document.getElementById("duckduckgo-results").innerHTML = "";
-  document.getElementById("facts-results").innerHTML = "";
-}
-
-// ✅ Enhanced Wikipedia fetch: Full article content + Image
-function fetchWikipediaFullArticle(query) {
-  const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
-  
-  fetch(summaryUrl)
-    .then(response => response.json())
-    .then(data => {
-      if (data.extract) {
-        const contentUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&titles=${encodeURIComponent(data.title)}&prop=extracts|pageimages&exintro=false&explaintext=true&pithumbsize=400&origin=*`;
-        
-        fetch(contentUrl)
-          .then(response => response.json())
-          .then(contentData => {
-            const pages = contentData.query.pages;
-            const pageId = Object.keys(pages)[0];
-            const fullContent = pages[pageId].extract;
-            const thumbnail = pages[pageId].thumbnail?.source;
-
-            const content = fullContent ? fullContent.substring(0, 2000) + '...' : data.extract;
-
-            document.getElementById("wiki-results").innerHTML = `
-              <h3>SnipInfo.: ${data.title}</h3>
-              ${thumbnail ? `<img src="${thumbnail}" alt="${data.title}" class="wiki-image" />` : ""}
-              <div class="wiki-summary">
-                <p><strong>Summary:</strong> ${data.extract}</p>
-              </div>
-              <div class="wiki-full-content">
-                <h4>Full Article Preview:</h4>
-                <p>${content}</p>
-              </div>
-              <div class="wiki-actions">
-                <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(data.title)}" target="_blank" class="wiki-link">Read Full Article →</a>
-                ${data.content_urls && data.content_urls.desktop ? `<a href="${data.content_urls.desktop.page}" target="_blank" class="wiki-link">Mobile Version →</a>` : ''}
-              </div>
-            `;
-          })
-          .catch(() => {
-            document.getElementById("wiki-results").innerHTML = `
-              <h3>SnipInfo.: ${data.title}</h3>
-              <p>${data.extract}</p>
-              <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(data.title)}" target="_blank" class="wiki-link">Read Full Article →</a>
-            `;
-          });
-      } else {
-        document.getElementById("wiki-results").innerHTML = `
-          <div class="no-results">
-            <h3>SnipInfo.</h3>
-            <p>No SnipInfo. found for "${query}"</p>
-          </div>
-        `;
-      }
-    })
-    .catch(err => {
-      console.error("Wikipedia error:", err);
-      document.getElementById("wiki-results").innerHTML = `
-        <div class="error-message">
-          <h3>SnipInfo.</h3>
-          <p>Unable to fetch SnipInfo. content</p>
-        </div>
-      `;
+function renderSearchHistory() {
+  const history = getSearchHistory();
+  historyList.innerHTML = '';
+  if (history.length > 0) {
+    history.forEach(query => {
+      const li = document.createElement('li');
+      li.className = "py-2 px-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition";
+      li.textContent = query;
+      li.onclick = () => {
+        searchInput.value = query;
+        historyDropdown.classList.add('hidden');
+        performSearch();
+      };
+      historyList.appendChild(li);
     });
+    historyDropdown.classList.remove('hidden');
+  } else {
+    historyDropdown.classList.add('hidden');
+  }
 }
 
-function fetchGoogleResults(query) {
-  const resultsDiv = document.getElementById("results");
+// Input Events
+searchInput.addEventListener('input', () => {
+  if (searchInput.value.trim().length > 0) {
+    searchButton.classList.remove('opacity-0');
+  } else {
+    searchButton.classList.add('opacity-0');
+  }
+});
+searchInput.addEventListener('focus', renderSearchHistory);
+searchInput.addEventListener('blur', () => setTimeout(() => historyDropdown.classList.add('hidden'), 100));
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    performSearch();
+    historyDropdown.classList.add('hidden');
+  }
+});
+clearHistoryButton.addEventListener('click', () => {
+  localStorage.removeItem('searchHistory');
+  historyDropdown.classList.add('hidden');
+});
+
+// Tab Switching
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('[id^="tab-"]').forEach(el => {
+    el.classList.remove("border-[var(--primary-color)]", "text-[var(--primary-color)]");
+    el.classList.add("border-transparent", "text-[var(--text-secondary)]");
+  });
+  const activeTab = document.getElementById("tab-" + tab);
+  if (activeTab) {
+    activeTab.classList.add("border-[var(--primary-color)]", "text-[var(--primary-color)]");
+  }
+  Object.keys(pageTokenMap).forEach(k => delete pageTokenMap[k]); // reset YouTube pagination
+  performSearch(1);
+}
+// ===== Snipsearch - script.js (Part 2) =====
+async function performSearch(page = 1) {
+  const query = searchInput.value.trim();
+  if (!query) {
+    resultsDiv.innerHTML = "";
+    paginationDiv.innerHTML = "";
+    return;
+  }
+
+  currentPage = page;
+  let resultsHTML = "";
+  errorMessageDiv.classList.add('hidden');
+  loadingIndicator.classList.remove('hidden');
   resultsDiv.innerHTML = "";
+  paginationDiv.innerHTML = "";
+  saveSearchHistory(query);
 
-  const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(query)}`;
+  try {
+    let url, data;
 
-  fetch(url)
-    .then(response => response.json())
-    .then(data => {
-      if (data.items && data.items.length > 0) {
+    // --- All (Google Custom Search) ---
+    if (currentTab === "all") {
+      const start = (page - 1) * 10 + 1;
+      url = `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(query)}&key=${apiKey}&cx=${cx}&start=${start}`;
+      const res = await fetch(url);
+      data = await res.json();
+      if (data.items) {
         data.items.forEach(item => {
-          const card = document.createElement("div");
-          card.className = "result-card";
-
-          let imageHTML = "";
-          if (item.pagemap?.cse_image?.length) {
-            const imgSrc = item.pagemap.cse_image[0].src;
-            imageHTML = `<img src="${imgSrc}" alt="thumbnail" class="result-image" />`;
-          }
-
-          card.innerHTML = `
-            ${imageHTML}
-            <h3><a href="${item.link}" target="_blank">${item.title}</a></h3>
-            <p>${item.snippet}</p>
-          `;
-
-          resultsDiv.appendChild(card);
+          resultsHTML += `
+            <div class="mb-6 p-4 rounded-lg shadow-sm bg-[var(--background-color)] border">
+              <a href="${item.link}" target="_blank" class="text-xl text-[var(--primary-color)] hover:underline">${item.title}</a>
+              <p class="text-sm text-green-600">${item.link}</p>
+              <p class="mt-1">${item.snippet || ""}</p>
+            </div>`;
         });
-      } else {
-        resultsDiv.innerHTML = "<p>No results found.</p>";
       }
-    })
-    .catch(error => {
-      console.error("Search error:", error);
-      resultsDiv.innerHTML = "<p>Search failed. Please try again.</p>";
-    });
-}
+    }
 
-// DuckDuckGo Instant Answer API - Enhanced for specific queries
-function fetchDuckDuckGoResults(query) {
-  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-
-  fetch(url)
-    .then(response => response.json())
-    .then(data => {
-      let content = '';
-      
-      // Check for instant answer
-      if (data.Answer) {
-        content += `<div class="ddg-answer"><strong>💡 Quick Answer:</strong> ${data.Answer}</div>`;
-      }
-      
-      // Check for abstract
-      if (data.Abstract) {
-        content += `<div class="ddg-abstract"><strong>📝 Summary:</strong> ${data.Abstract}</div>`;
-        if (data.AbstractSource) {
-          content += `<div class="ddg-source"><small>Source: ${data.AbstractSource}</small></div>`;
-        }
-      }
-      
-      // Check for definition
-      if (data.Definition) {
-        content += `<div class="ddg-definition"><strong>📚 Definition:</strong> ${data.Definition}</div>`;
-        if (data.DefinitionSource) {
-          content += `<div class="ddg-source"><small>Source: ${data.DefinitionSource}</small></div>`;
-        }
-      }
-      
-      if (content) {
-        document.getElementById("duckduckgo-results").innerHTML = `
-          <h3>Instant Answer</h3>
-          ${content}
-        `;
-      }
-    })
-    .catch(err => {
-      console.error("DuckDuckGo API error:", err);
-      // Silent error handling
-    });
-}
-
-// Facts API - Context-aware facts
-function fetchRandomFact() {
-  const url = 'https://uselessfacts.jsph.pl/random.json?language=en';
-
-  fetch(url)
-    .then(response => response.json())
-    .then(data => {
-      if (data.text) {
-        document.getElementById("facts-results").innerHTML = `
-          <h3>🎯 Interesting Fact</h3>
-          <p>${data.text}</p>
-          <small>💡 Did you know? • Source: Snipsearch Insights</small>
-        `;
-      }
-    })
-    .catch(err => {
-      console.error("Facts API error:", err);
-      // Silent error handling
-    });
-}
-
-// NumbersAPI fetch function - Enhanced
-function fetchNumbersFact(query) {
-  const numberMatch = query.match(/\d+/);
-  if (!numberMatch) return;
-  
-  const number = numberMatch[0];
-  const url = `http://numbersapi.com/${number}`;
-
-  fetch(url)
-    .then(response => response.text())
-    .then(data => {
-      document.getElementById("numbers-results").innerHTML = `
-        <h3>🔢 Numbers Fact: ${number}</h3>
-        <p>${data}</p>
-        <small>📊 Mathematical</small>
-      `;
-    })
-    .catch(err => {
-      console.error("NumbersAPI error:", err);
-      // Don't show error message to keep UI clean
-    });
-}
-
-// Updated function to use GNews API for global news
-function fetchTopNews() {
-  const newsContainer = document.getElementById("newsApiResults");
-  newsContainer.innerHTML = "Loading global news...";
-
-  // GNews API URL for global top headlines (removed country parameter for global news)
-  const gnewsUrl = `https://gnews.io/api/v4/top-headlines?token=${gnewsApiKey}&lang=en&max=10`;
-
-  fetch(gnewsUrl)
-    .then(response => response.json())
-    .then(data => {
-      newsContainer.innerHTML = "";
-
-      if (data.articles && data.articles.length > 0) {
-        data.articles.forEach(news => {
-          const card = document.createElement("div");
-          card.className = "result-card";
-
-          const imageHTML = news.image
-            ? `<img src="${news.image}" alt="news" class="result-image" />`
-            : "";
-
-          // Format published date
-          const publishedDate = new Date(news.publishedAt).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          });
-
-          card.innerHTML = `
-            ${imageHTML}
-            <h3><a href="${news.url}" target="_blank">${news.title}</a></h3>
-            <p>${news.description || ""}</p>
-            <div class="news-meta">
-              <small>📰 ${news.source.name} • 🕒 ${publishedDate} • 🌍 Global</small>
-            </div>
-          `;
-
-          newsContainer.appendChild(card);
+    // --- Images ---
+    if (currentTab === "images") {
+      const start = (page - 1) * 10 + 1;
+      url = `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(query)}&searchType=image&key=${apiKey}&cx=${cx}&start=${start}`;
+      const res = await fetch(url);
+      data = await res.json();
+      if (data.items) {
+        resultsHTML = `<div class="grid grid-cols-2 md:grid-cols-4 gap-4">`;
+        data.items.forEach(img => {
+          resultsHTML += `
+            <a href="${img.link}" target="_blank" class="block overflow-hidden rounded-lg shadow-md hover:scale-105 transition">
+              <img src="${img.link}" alt="${img.title}" class="w-full h-auto object-cover"/>
+            </a>`;
         });
-      } else {
-        newsContainer.innerHTML = "<p>No news found.</p>";
+        resultsHTML += `</div>`;
       }
-    })
-    .catch(err => {
-      console.error("GNews API error:", err);
-      newsContainer.innerHTML = "<p>Failed to load news. Please try again later.</p>";
-    });
-}
+    }
 
-// Additional function to search global news by topic
-function searchNews(topic) {
-  const newsContainer = document.getElementById("newsApiResults");
-  newsContainer.innerHTML = "Searching global news...";
-
-  const gnewsSearchUrl = `https://gnews.io/api/v4/search?q=${encodeURIComponent(topic)}&token=${gnewsApiKey}&lang=en&max=10`;
-
-  fetch(gnewsSearchUrl)
-    .then(response => response.json())
-    .then(data => {
-      newsContainer.innerHTML = "";
-
-      if (data.articles && data.articles.length > 0) {
-        data.articles.forEach(news => {
-          const card = document.createElement("div");
-          card.className = "result-card";
-
-          const imageHTML = news.image
-            ? `<img src="${news.image}" alt="news" class="result-image" />`
-            : "";
-
-          const publishedDate = new Date(news.publishedAt).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          });
-
-          card.innerHTML = `
-            ${imageHTML}
-            <h3><a href="${news.url}" target="_blank">${news.title}</a></h3>
-            <p>${news.description || ""}</p>
-            <div class="news-meta">
-              <small>📰 ${news.source.name} • 🕒 ${publishedDate} • 🌍 Global</small>
-            </div>
-          `;
-
-          newsContainer.appendChild(card);
+    // --- News (GNews API) ---
+    if (currentTab === "news") {
+      url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&lang=en&token=${gnewsApiKey}&max=10&page=${page}`;
+      const res = await fetch(url);
+      data = await res.json();
+      if (data.articles) {
+        data.articles.forEach(article => {
+          resultsHTML += `
+            <div class="mb-6 p-4 rounded-lg shadow-sm bg-[var(--background-color)] border">
+              <a href="${article.url}" target="_blank" class="text-xl text-[var(--primary-color)] hover:underline">${article.title}</a>
+              <p class="text-sm text-green-600">${article.source?.name || ""}</p>
+              <p class="mt-1">${article.description || ""}</p>
+            </div>`;
         });
-      } else {
-        newsContainer.innerHTML = `<p>No news found for "${topic}".</p>`;
       }
-    })
-    .catch(err => {
-      console.error("GNews search error:", err);
-      newsContainer.innerHTML = "<p>Failed to search news. Please try again later.</p>";
-    });
+    }
+
+    // --- Videos (YouTube API) ---
+    if (currentTab === "videos") {
+      const pageToken = pageTokenMap[page] || "";
+      url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=10&q=${encodeURIComponent(query)}&key=${youtubeApiKey}&pageToken=${pageToken}`;
+      const res = await fetch(url);
+      data = await res.json();
+      if (data.items) {
+        pageTokenMap[page + 1] = data.nextPageToken || "";
+        pageTokenMap[page - 1] = data.prevPageToken || "";
+        data.items.forEach(video => {
+          const vid = video.id?.videoId;
+          const sn = video.snippet || {};
+          if (!vid) return;
+          resultsHTML += `
+            <div class="mb-6 p-4 rounded-lg shadow-sm bg-[var(--background-color)] border">
+              <a href="https://www.youtube.com/watch?v=${vid}" target="_blank" class="text-xl text-[var(--primary-color)] hover:underline">${sn.title}</a>
+              <p class="text-sm">${sn.channelTitle || ""}</p>
+              <img src="${sn.thumbnails?.medium?.url || ""}" alt="${sn.title}" class="rounded-lg mt-2"/>
+            </div>`;
+        });
+      }
+    }
+
+    // --- Wikipedia (NEW) ---
+    if (currentTab === "wikipedia") {
+      url = `https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srsearch=${encodeURIComponent(query)}&origin=*`;
+      const res = await fetch(url);
+      data = await res.json();
+      if (data.query?.search) {
+        data.query.search.forEach(article => {
+          const link = `https://en.wikipedia.org/wiki/${encodeURIComponent(article.title)}`;
+          resultsHTML += `
+            <div class="mb-6 p-4 rounded-lg shadow-sm bg-[var(--background-color)] border">
+              <a href="${link}" target="_blank" class="text-xl text-[var(--primary-color)] hover:underline">${article.title}</a>
+              <p class="mt-1">${article.snippet || ""}...</p>
+            </div>`;
+        });
+      }
+    }
+
+    // Render results
+    resultsDiv.innerHTML = resultsHTML;
+
+    if (resultsHTML.trim() === "") {
+      errorMessageDiv.textContent = `No results found for "${query}".`;
+      errorMessageDiv.classList.remove('hidden');
+    }
+
+    // --- Pagination (only for non-Wikipedia tabs) ---
+    let paginationHTML = "";
+    if (currentTab !== "wikipedia") {
+      if (page > 1) paginationHTML += `<button onclick="performSearch(${page-1})" class="px-3 py-1 border rounded-full">Prev</button>`;
+      paginationHTML += `<button onclick="performSearch(${page+1})" class="px-3 py-1 border rounded-full">Next</button>`;
+    }
+    paginationDiv.innerHTML = paginationHTML;
+
+  } catch (error) {
+    console.error("Search failed:", error);
+    errorMessageDiv.textContent = "Error while searching. Please try again.";
+    errorMessageDiv.classList.remove('hidden');
+  } finally {
+    loadingIndicator.classList.add('hidden');
+  }
 }
+
+// Expose for HTML
+window.performSearch = performSearch;
+window.switchTab = switchTab;
+
+// Init
+switchTab(currentTab);
